@@ -592,8 +592,8 @@ def buildRapidNJ(rapidnj, refList, coreMat, outPrefix, tree_filename):
             for line in f:
                 fo.write(line.replace("'", ''))
         # tidy unnecessary files
-        os.remove(tree_filename+".raw")
-        os.remove(phylip_name)
+        # os.remove(tree_filename+".raw")
+        # os.remove(phylip_name)
 
     # record errors
     except subprocess.CalledProcessError as e:
@@ -650,6 +650,7 @@ def outputsForMicroreact(combined_list, coreMat, accMat, clustering, perplexity,
     
     # write the phylogeny .nwk; t-SNE network .dot; clusters + data .csv
     generate_phylogeny(coreMat, seqLabels, outPrefix, "_core_NJ.nwk", rapidnj, overwrite)
+    generate_acc_phylogeny(accMat, seqLabels, outPrefix, "_acc_NJ.nwk", rapidnj, overwrite)
     generate_tsne(seqLabels, accMat, perplexity, outPrefix, overwrite)
 
 def generate_phylogeny(coreMat, seqLabels, outPrefix, tree_suffix, rapidnj, overwrite):
@@ -682,6 +683,7 @@ def generate_phylogeny(coreMat, seqLabels, outPrefix, tree_suffix, rapidnj, over
         sys.stderr.write("Building phylogeny\n")
         if rapidnj is not None:
             tree = buildRapidNJ(rapidnj, seqLabels, coreMat, outPrefix, tree_filename)
+            print(rapidnj, seqLabels, coreMat, outPrefix, tree_filename)
         else:
             pdm = dendropy.PhylogeneticDistanceMatrix.from_csv(src=open(core_dist_file),
                                                                delimiter=",",
@@ -701,7 +703,59 @@ def generate_phylogeny(coreMat, seqLabels, outPrefix, tree_suffix, rapidnj, over
         sys.stderr.write("NJ phylogeny already exists; add --overwrite to replace\n")
 
     # remove file as it can be large
-    os.remove(core_dist_file)
+    # os.remove(core_dist_file)
+
+def generate_acc_phylogeny(accMat, seqLabels, outPrefix, tree_suffix, rapidnj, overwrite):
+    """Generate phylogeny using dendropy or RapidNJ
+
+    Writes a neighbour joining tree (.nwk) from acc distances.
+
+    Args:
+        accMat (numpy.array)
+            n x n array of acc distances for n samples.
+        seqLabels (list)
+            Processed names of sequences being analysed.
+        outPrefix (str)
+            Prefix for all generated output files, which will be placed in `outPrefix` subdirectory
+        tree_suffix (str)
+            String to append to tree file name
+        rapidnj (str)
+            A string with the location of the rapidnj executable for tree-building. If None, will
+            use dendropy by default
+        overwrite (bool)
+            Overwrite existing output if present (default = False)
+    """
+    # Save distances to file
+    acc_dist_file = outPrefix + "/" + os.path.basename(outPrefix) + "_acc_dists.csv"
+    np.savetxt(acc_dist_file, accMat, delimiter=",", header = ",".join(seqLabels), comments="")
+
+    # calculate phylogeny
+    tree_filename = outPrefix + "/" + os.path.basename(outPrefix) + tree_suffix
+    if overwrite or not os.path.isfile(tree_filename):
+        sys.stderr.write("Building accessory phylogeny\n")
+        if rapidnj is not None:
+            tree = buildRapidNJ(rapidnj, seqLabels, accMat, outPrefix, tree_filename)
+            print(rapidnj, seqLabels, accMat, outPrefix, tree_filename)
+        else:
+            pdm = dendropy.PhylogeneticDistanceMatrix.from_csv(src=open(acc_dist_file),
+                                                               delimiter=",",
+                                                               is_first_row_column_names=True,
+                                                               is_first_column_row_names=False)
+            tree = pdm.nj_tree()
+
+        # Not sure why, but seems that this needs to be run twice to get
+        # what I would think of as a midpoint rooted tree
+        tree.reroot_at_midpoint(update_bipartitions=True, suppress_unifurcations=False)
+        tree.reroot_at_midpoint(update_bipartitions=True, suppress_unifurcations=False)
+        tree.write(path=tree_filename,
+                   schema="newick",
+                   suppress_rooting=True,
+                   unquoted_underscores=True)
+    else:
+        sys.stderr.write("NJ phylogeny already exists; add --overwrite to replace\n")
+
+    # remove file as it can be large
+    # os.remove(acc_dist_file)
 
 def outputsForPhandango(combined_list, coreMat, clustering, outPrefix, epiCsv, rapidnj,
                         queryList = None, overwrite = False, microreact = False):
